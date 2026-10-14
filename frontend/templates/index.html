@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Beyond Marks — NLP Learning Gap Detection & Remediation</title>
+  <link rel="stylesheet" href="/static/css/styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+<!-- ═══════════════════════════════ HEADER ═══════════════════════════════════ -->
+<header class="app-header">
+  <div class="header-inner">
+    <div class="header-brand">
+      <div class="brand-icon">🎓</div>
+      <div class="brand-text">
+        <h1>Beyond Marks</h1>
+        <p>NLP-Based Learning Gap Detection &amp; Remediation · 8-Stage Methodology</p>
+      </div>
+    </div>
+    <div class="header-badges">
+      <span class="badge badge-backend" id="backendStatusBadge">🟢 Backend Connected · http://localhost:5000</span>
+      <span class="badge badge-sbert">SBERT · all-MiniLM-L6-v2 (384-d)</span>
+      <span class="badge badge-paper">Section V — 8 Stages</span>
+    </div>
+  </div>
+</header>
+
+<!-- ═══════════════════════════════ MAIN ════════════════════════════════════ -->
+<main class="app-main">
+
+  <!-- ── LEFT PANEL: Input & Stages 1-3 ─────────────────────────────────── -->
+  <section class="panel panel-input" id="inputPanel">
+
+    <!-- ── STAGE 1: Topic & Domain Selection ── -->
+    <div class="card stage-card" id="stage1Card">
+      <div class="card-header">
+        <span class="step-badge">Stage 1</span>
+        <div>
+          <h2>Curriculum &amp; Domain Selection</h2>
+          <span class="card-subtitle">Choose a pre-loaded topic or domain model</span>
+        </div>
+      </div>
+      <div class="topic-grid" id="topicGrid">
+        <!-- Injected dynamically via JS from /api/topics -->
+      </div>
+    </div>
+
+    <!-- ── STAGE 2: Expected Concepts Formulation ── -->
+    <div class="card stage-card" id="stage2Card">
+      <div class="card-header">
+        <span class="step-badge">Stage 2</span>
+        <div>
+          <h2>Expected Reference Concepts</h2>
+          <span class="card-subtitle">Click any tag to inspect formulation &amp; test SBERT embedding</span>
+        </div>
+        <span class="concepts-count" id="conceptsCount">0 concepts</span>
+      </div>
+      <div class="concept-tags-container" id="conceptTags">
+        <!-- Injected dynamically via JS from backend -->
+      </div>
+      <div class="concept-hint-banner">
+        💡 <em>Click any concept tag above to open the <strong>Concept Inspector</strong> and test live cosine similarity.</em>
+      </div>
+    </div>
+
+    <!-- ── STAGE 3: Student Answer & NLP Preprocessing ── -->
+    <div class="card stage-card" id="stage3Card">
+      <div class="card-header">
+        <span class="step-badge">Stage 3</span>
+        <div>
+          <h2>Student Response &amp; NLP Extraction</h2>
+          <span class="card-subtitle">Ingestion, tokenization, stop-words, and phrase extraction</span>
+        </div>
+      </div>
+
+      <div class="answer-meta" id="topicDescription">
+        <!-- Topic prompt injected by JS -->
+      </div>
+
+      <!-- Topic Mismatch Alert (shown if text doesn't match active topic) -->
+      <div class="topic-mismatch-alert" id="topicMismatchAlert" style="display:none">
+        <span class="alert-icon">⚠️</span>
+        <div class="alert-body">
+          <strong>Topic Mismatch Detected:</strong>
+          <span id="mismatchMsg">The current text appears to discuss another topic.</span>
+          <button class="btn btn-xs btn-outline" id="btnFixMismatch">Load Matching Sample</button>
+        </div>
+      </div>
+
+      <!-- Sample Answer Quick-Load Bar -->
+      <div class="sample-pills-bar">
+        <span class="sample-pills-label">Quick Load:</span>
+        <button class="btn btn-pill btn-pill-strong" id="btnSampleStrong" title="Complete answer covering all expected concepts">
+          🟢 Strong (Mastery)
+        </button>
+        <button class="btn btn-pill btn-pill-partial" id="btnSamplePartial" title="Realistic answer with missing/partial concepts">
+          🟡 Partial (Gaps)
+        </button>
+        <button class="btn btn-pill btn-pill-weak" id="btnSampleWeak" title="Vague introductory answer">
+          🔴 Weak (Missing)
+        </button>
+        <button class="btn btn-pill btn-pill-clear" id="btnSampleClear" title="Clear student response text">
+          ✕ Clear
+        </button>
+      </div>
+
+      <!-- Answer Input Textarea -->
+      <div class="textarea-wrapper">
+        <textarea
+          id="studentAnswer"
+          class="answer-textarea"
+          placeholder="Type or paste the student's theoretical response here, or click a quick-load pill above…"
+          rows="6"
+          spellcheck="true"
+        ></textarea>
+      </div>
+
+      <!-- Word count and Stage 3 Preprocess Trigger -->
+      <div class="stage3-actions-bar">
+        <div class="text-meta-stats">
+          <span id="wordCount">0</span> words · <span id="charCount">0</span> chars
+        </div>
+        <button class="btn btn-secondary btn-sm" id="btnRunStage3" title="Run Stage 3 NLP cleaning, tokenization, and concept keyword extraction">
+          <span>⚡ Stage 3: Preprocess NLP</span>
+        </button>
+      </div>
+
+      <!-- Stage 3 Live Preprocessing Results Container -->
+      <div class="stage3-output-box" id="stage3OutputBox" style="display:none">
+        <div class="stage3-output-header">
+          <span class="s3-title">Stage 3 NLP Output (Live from Backend)</span>
+          <span class="s3-stats" id="stage3StatsBadge"></span>
+        </div>
+
+        <!-- Filtered Tokens -->
+        <div class="s3-section">
+          <span class="s3-section-label">Filtered Tokens (Stop-Words Removed):</span>
+          <div class="s3-tokens-wrap" id="s3TokenChips"></div>
+        </div>
+
+        <!-- Noun Phrases & Technical Terms -->
+        <div class="s3-section">
+          <span class="s3-section-label">Extracted Noun Phrases &amp; Technical Terms:</span>
+          <div class="s3-phrases-wrap" id="s3PhraseChips"></div>
+        </div>
+
+        <!-- Concept Keyword Matches -->
+        <div class="s3-section">
+          <span class="s3-section-label">Concept Keyword Alignment:</span>
+          <div class="s3-matches-wrap" id="s3ConceptMatches"></div>
+        </div>
+      </div>
+
+      <!-- Main Run Stages 4-8 Action Button -->
+      <div class="analyze-action-bar">
+        <button class="btn btn-primary btn-analyze" id="btnAnalyze">
+          <span class="btn-icon">🚀</span>
+          <span>Analyze Answer (Run Stages 4–8)</span>
+        </button>
+      </div>
+
+    </div>
+
+  </section>
+
+  <!-- ── RIGHT PANEL: Dashboard (Stages 4-8) ────────────────────────────── -->
+  <section class="panel panel-dashboard" id="dashboardPanel">
+
+    <!-- Placeholder State -->
+    <div class="dashboard-placeholder" id="dashboardPlaceholder">
+      <div class="placeholder-icon">📊</div>
+      <h3>Personalized Learning Dashboard</h3>
+      <p>Submit a student answer to generate the diagnostic report and remediation</p>
+      <div class="pipeline-steps">
+        <div class="pipeline-step">
+          <span>1</span><p>Domain Model</p>
+        </div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step">
+          <span>2</span><p>Expected Concepts</p>
+        </div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step">
+          <span>3</span><p>NLP Preprocessing</p>
+        </div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step">
+          <span>4</span><p>SBERT Similarity</p>
+        </div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step">
+          <span>5</span><p>Tri-State</p>
+        </div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step">
+          <span>6</span><p>Gap Mapping</p>
+        </div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step">
+          <span>7</span><p>Remediation</p>
+        </div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step">
+          <span>8</span><p>Dashboard</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading State -->
+    <div class="dashboard-loading" id="dashboardLoading" style="display:none">
+      <div class="loading-spinner"></div>
+      <h3 id="loadingMessage">Initializing NLP pipeline…</h3>
+      <div class="loading-steps">
+        <div class="loading-step" id="lstep1">⏳ Preprocessing text (Stage 3)</div>
+        <div class="loading-step" id="lstep2">⏳ Generating SBERT embeddings (Stage 4)</div>
+        <div class="loading-step" id="lstep3">⏳ Computing cosine similarity matrix</div>
+        <div class="loading-step" id="lstep4">⏳ Tri-State classification &amp; Gap mapping (Stages 5-6)</div>
+        <div class="loading-step" id="lstep5">⏳ Generating personalized remediation (Stage 7)</div>
+      </div>
+    </div>
+
+    <!-- Results Dashboard (Stages 4-8) -->
+    <div class="dashboard-results" id="dashboardResults" style="display:none">
+
+      <!-- Header -->
+      <div class="results-header">
+        <div>
+          <span class="results-badge" id="resultsDomainBadge">Computer Networks</span>
+          <h2 id="resultsTopicTitle">Analysis Results</h2>
+          <p class="results-subtitle" id="resultsSubtitle"></p>
+        </div>
+        <div class="results-header-actions">
+          <button class="btn btn-secondary btn-sm" id="btnReanalyze">🔄 Re-Analyze</button>
+          <button class="btn btn-ghost btn-sm" id="btnReset">✕ New Evaluation</button>
+        </div>
+      </div>
+
+      <!-- Mastery Overview ─── Stage 8 -->
+      <div class="card mastery-card">
+        <div class="card-header">
+          <span class="step-badge">Stage 8</span>
+          <h3>Concept Mastery Overview</h3>
+        </div>
+        <div class="mastery-content">
+          <div class="gauge-wrapper">
+            <svg class="gauge-svg" viewBox="0 0 200 120" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="gaugeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%"   stop-color="#ef4444"/>
+                  <stop offset="50%"  stop-color="#f59e0b"/>
+                  <stop offset="100%" stop-color="#10b981"/>
+                </linearGradient>
+              </defs>
+              <path d="M 20 100 A 80 80 0 0 1 180 100"
+                    fill="none" stroke="#e2e8f0" stroke-width="14" stroke-linecap="round"/>
+              <path id="gaugeArc" d="M 20 100 A 80 80 0 0 1 180 100"
+                    fill="none" stroke="url(#gaugeGradient)" stroke-width="14"
+                    stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="251.2"/>
+              <line id="gaugeNeedle" x1="100" y1="100" x2="100" y2="28"
+                    stroke="#1e293b" stroke-width="2.5" stroke-linecap="round"/>
+              <circle cx="100" cy="100" r="5" fill="#1e293b"/>
+              <text x="18"  y="118" font-size="10" fill="#94a3b8">0</text>
+              <text x="88"  y="16"  font-size="10" fill="#94a3b8">50</text>
+              <text x="175" y="118" font-size="10" fill="#94a3b8">100</text>
+              <text id="gaugePct" x="100" y="86" text-anchor="middle"
+                    font-size="26" font-weight="700" fill="#1e293b">0%</text>
+              <text x="100" y="100" text-anchor="middle"
+                    font-size="9" fill="#64748b">Mastery</text>
+            </svg>
+          </div>
+          <div class="mastery-stats">
+            <div class="stat-item stat-correct">
+              <div class="stat-dot"></div>
+              <div>
+                <div class="stat-value" id="statCorrect">0</div>
+                <div class="stat-label">Correct (≥0.70)</div>
+              </div>
+            </div>
+            <div class="stat-item stat-partial">
+              <div class="stat-dot"></div>
+              <div>
+                <div class="stat-value" id="statPartial">0</div>
+                <div class="stat-label">Partial (0.40–0.69)</div>
+              </div>
+            </div>
+            <div class="stat-item stat-missing">
+              <div class="stat-dot"></div>
+              <div>
+                <div class="stat-value" id="statMissing">0</div>
+                <div class="stat-label">Missing (&lt;0.40)</div>
+              </div>
+            </div>
+            <div class="stat-item stat-total">
+              <div class="stat-dot"></div>
+              <div>
+                <div class="stat-value" id="statTotal">0</div>
+                <div class="stat-label">Total Concepts</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="mastery-bar-wrap">
+          <div class="mastery-bar-track">
+            <div class="mastery-bar-fill" id="masteryBarCorrect" style="width:0%"></div>
+            <div class="mastery-bar-fill mastery-bar-partial" id="masteryBarPartial" style="width:0%"></div>
+          </div>
+          <div class="mastery-bar-labels">
+            <span id="masteryLabelCorrect">0% Correct</span>
+            <span id="masteryLabelPartial">0% Partial</span>
+            <span id="masteryLabelMissing">0% Missing</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Diagnostic Matrix ─── Stage 4, 5 & Table I from paper -->
+      <div class="card table-card">
+        <div class="card-header">
+          <span class="step-badge">Stage 4 &amp; 5</span>
+          <h3>Diagnostic Output — Table I from Paper</h3>
+          <span class="table-caption">Semantic Concept Classification via SBERT Cosine Similarity</span>
+        </div>
+        <div class="table-wrapper">
+          <table class="diag-table" id="diagTable">
+            <thead>
+              <tr>
+                <th>Expected Concept</th>
+                <th>Student Response Evidence</th>
+                <th>Cosine Similarity</th>
+                <th>Classification</th>
+                <th>Recommended Pedagogical Action</th>
+              </tr>
+            </thead>
+            <tbody id="diagTableBody">
+              <!-- Injected by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Remediation Cards ─── Stage 7 -->
+      <div class="remediation-section" id="remediationSection">
+        <div class="card-header section-header">
+          <span class="step-badge">Stage 7</span>
+          <h3>Personalized Remediation Cards</h3>
+          <div class="remediation-loading" id="remLoading" style="display:none">
+            <div class="mini-spinner"></div><span>Generating remediation via AI…</span>
+          </div>
+        </div>
+        <div class="remediation-cards" id="remediationCards">
+          <!-- Injected by JS -->
+        </div>
+      </div>
+
+    </div>
+
+  </section>
+
+</main>
+
+<!-- ═══════════════════════════════ CONCEPT INSPECTOR MODAL (Stage 2) ═══════ -->
+<div class="modal-backdrop" id="conceptModalBackdrop" style="display:none">
+  <div class="modal-card">
+    <div class="modal-header">
+      <div class="modal-title-wrap">
+        <span class="modal-badge">Stage 2 · Concept Inspector</span>
+        <h3 id="modalConceptTitle">Concept Details</h3>
+      </div>
+      <button class="modal-close" id="btnModalClose">✕</button>
+    </div>
+    <div class="modal-body">
+      <!-- Concept Info -->
+      <div class="modal-section">
+        <span class="modal-section-title">Reference Description (Ground Truth Formulation):</span>
+        <div class="modal-description-box" id="modalConceptDesc"></div>
+      </div>
+
+      <!-- Keywords & Technical Terms -->
+      <div class="modal-section">
+        <span class="modal-section-title">Key Technical Terms &amp; Expected Keywords:</span>
+        <div class="modal-keywords-box" id="modalConceptKeywords"></div>
+      </div>
+
+      <!-- SBERT Embedding Metadata -->
+      <div class="modal-section">
+        <span class="modal-section-title">SBERT Vector Representation:</span>
+        <div class="modal-meta-grid">
+          <div class="meta-item">
+            <span class="meta-label">Model</span>
+            <span class="meta-val">sentence-transformers/all-MiniLM-L6-v2</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Vector Dimension</span>
+            <span class="meta-val">384-dimensional dense embedding</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Metric</span>
+            <span class="meta-val">Cosine Similarity (Normalized dot product)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Interactive Quick-Test Sandbox -->
+      <div class="modal-section sandbox-section">
+        <span class="modal-section-title">🧪 Live SBERT Similarity Test against this Concept:</span>
+        <div class="sandbox-input-row">
+          <input type="text" id="sandboxInput" class="sandbox-input" placeholder="Type a sample student sentence to test similarity against this concept..." />
+          <button class="btn btn-secondary btn-sm" id="btnSandboxTest">Test SBERT</button>
+        </div>
+        <div class="sandbox-result-box" id="sandboxResultBox" style="display:none">
+          <div class="sandbox-result-stat">
+            <span>Cosine Similarity:</span>
+            <strong id="sandboxSimScore">0.0%</strong>
+          </div>
+          <div class="sandbox-result-stat">
+            <span>Classification:</span>
+            <span class="status-pill" id="sandboxStatusPill">Correct</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary btn-sm" id="btnModalOk">Close Inspector</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ FOOTER ══════════════════════════════════ -->
+<footer class="app-footer">
+  <p>
+    <strong>Beyond Marks</strong> — NLP-Based Learning Gap Detection &amp; Remediation ·
+    SBERT (all-MiniLM-L6-v2) · Cosine Similarity · Gemini LLM · Flask API
+  </p>
+  <p class="footer-thresholds">
+    Thresholds: <span class="t-correct">Correct ≥ 0.70</span> ·
+    <span class="t-partial">Partial 0.40–0.69</span> ·
+    <span class="t-missing">Missing &lt; 0.40</span>
+  </p>
+</footer>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>
