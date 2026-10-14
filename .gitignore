@@ -43,3 +43,13 @@ env/
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Logs & Caches
+*.log
+.cache/
+.pytest_cache/
+.mypy_cache/
+
+# Vercel CLI
+.vercel/
+

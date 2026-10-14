@@ -1,0 +1,44 @@
+# Tests and test runners
+test_*.py
+test_api.py
+test_all_stages.py
+tests/
+*test*.py
+
+# Documentation & Markdown
+README.md
+*.md
+docs/
+
+# Git and CI
+.git/
+.github/
+.gitignore
+.vercelignore
+
+# Python virtual environments & bytecode
+.venv/
+venv/
+env/
+ENV/
+build/
+dist/
+*.egg-info/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.cache/
+
+# Local Environment Variables
+.env
+.env.local
+.env.*
+!.env.example
+
+# OS artifacts & logs
+*.log
+.DS_Store
+Thumbs.db
+Desktop.ini
