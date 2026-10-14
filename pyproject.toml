@@ -1,0 +1,9 @@
+[project]
+name = "beyond-marks"
+version = "1.0.0"
+description = "Beyond Marks: NLP-Based Learning Gap Detection and Remediation"
+readme = "README.md"
+requires-python = ">=3.10"
+
+[tool.vercel]
+entrypoint = "backend.app:app"

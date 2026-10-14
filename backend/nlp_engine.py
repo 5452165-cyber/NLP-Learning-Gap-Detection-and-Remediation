@@ -28,9 +28,16 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
+import tempfile
+import os
+
 # ─── NLTK Resource Bootstrap ─────────────────────────────────────────────────
 def bootstrap_nltk():
-    """Download required NLTK resources if not already present."""
+    """Download required NLTK resources safely with fallback for serverless environments."""
+    tmp_nltk = os.path.join(tempfile.gettempdir(), "nltk_data")
+    if tmp_nltk not in nltk.data.path:
+        nltk.data.path.append(tmp_nltk)
+
     resources = [
         ("tokenizers/punkt",          "punkt"),
         ("tokenizers/punkt_tab",      "punkt_tab"),
@@ -41,10 +48,24 @@ def bootstrap_nltk():
             nltk.data.find(path)
         except LookupError:
             logger.info("Downloading NLTK resource: %s", name)
-            nltk.download(name, quiet=True)
+            try:
+                nltk.download(name, quiet=True)
+            except Exception:
+                try:
+                    nltk.download(name, download_dir=tmp_nltk, quiet=True)
+                except Exception as e:
+                    logger.warning("Could not download NLTK resource %s: %s", name, e)
 
 bootstrap_nltk()
-STOP_WORDS = set(stopwords.words("english"))
+
+try:
+    STOP_WORDS = set(stopwords.words("english"))
+except Exception:
+    STOP_WORDS = {
+        "the", "a", "an", "is", "are", "was", "were", "in", "it", "of", "to",
+        "and", "that", "this", "for", "with", "as", "on", "by", "at", "from",
+        "be", "or", "which", "so", "but", "not", "have", "has", "had", "can"
+    }
 
 # Preserve important technical and domain keywords
 DOMAIN_TERMS = {

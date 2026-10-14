@@ -23,13 +23,24 @@ import warnings
 warnings.filterwarnings("ignore", category=FutureWarning, module="google")
 
 # ── Fix import path so backend modules are found ──────────────────────────────
-sys.path.insert(0, os.path.dirname(__file__))
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+BACKEND_DIR = os.path.abspath(os.path.dirname(__file__))
+
+if BACKEND_DIR not in sys.path:
+    sys.path.insert(0, BACKEND_DIR)
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
 
 from flask import Flask, jsonify, request, render_template
 
-from config import TOPICS, DEFAULT_TOPIC, SBERT_MODEL_NAME, SBERT_EMBEDDING_DIM
-from nlp_engine import analyze_answer, preprocess_text, test_single_concept, get_sbert_model
-from remediation_engine import generate_all_remediations
+try:
+    from config import TOPICS, DEFAULT_TOPIC, SBERT_MODEL_NAME, SBERT_EMBEDDING_DIM
+    from nlp_engine import analyze_answer, preprocess_text, test_single_concept, get_sbert_model
+    from remediation_engine import generate_all_remediations
+except ImportError:
+    from backend.config import TOPICS, DEFAULT_TOPIC, SBERT_MODEL_NAME, SBERT_EMBEDDING_DIM
+    from backend.nlp_engine import analyze_answer, preprocess_text, test_single_concept, get_sbert_model
+    from backend.remediation_engine import generate_all_remediations
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -39,10 +50,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ─── Flask App Setup ──────────────────────────────────────────────────────────
+template_dir = os.path.join(BASE_DIR, "frontend", "templates")
+static_dir = os.path.join(BASE_DIR, "frontend", "static")
+
 app = Flask(
     __name__,
-    template_folder=os.path.join(os.path.dirname(__file__), "..", "frontend", "templates"),
-    static_folder=os.path.join(os.path.dirname(__file__), "..", "frontend", "static"),
+    template_folder=template_dir,
+    static_folder=static_dir,
     static_url_path="/static",
 )
 
