@@ -12,77 +12,150 @@ import logging
 from functools import lru_cache
 from typing import List, Dict, Tuple, Optional, Any
 
-import nltk
-from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize, sent_tokenize
-from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
+import os
+import re
+import logging
+import tempfile
+from functools import lru_cache
+from typing import List, Dict, Tuple, Optional, Any
 
-from config import (
-    SBERT_MODEL_NAME,
-    SBERT_EMBEDDING_DIM,
-    THRESHOLD_CORRECT,
-    THRESHOLD_PARTIAL,
-)
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+
+try:
+    from config import (
+        SBERT_MODEL_NAME,
+        SBERT_EMBEDDING_DIM,
+        THRESHOLD_CORRECT,
+        THRESHOLD_PARTIAL,
+    )
+except ImportError:
+    from backend.config import (
+        SBERT_MODEL_NAME,
+        SBERT_EMBEDDING_DIM,
+        THRESHOLD_CORRECT,
+        THRESHOLD_PARTIAL,
+    )
 
 logger = logging.getLogger(__name__)
 
-import tempfile
-import os
+# ─── Static English Stopwords (Zero-latency, no network dependencies) ────────
+STATIC_STOP_WORDS = {
+    "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", "any", "are", "aren't",
+    "as", "at", "be", "because", "been", "before", "being", "below", "between", "both", "but", "by",
+    "can't", "cannot", "could", "couldn't", "did", "didn't", "do", "does", "doesn't", "doing", "don't",
+    "down", "during", "each", "few", "for", "from", "further", "had", "hadn't", "has", "hasn't", "have",
+    "haven't", "having", "he", "he'd", "he'll", "he's", "her", "here", "here's", "hers", "herself",
+    "him", "himself", "his", "how", "how's", "i", "i'd", "i'll", "i'm", "i've", "if", "in", "into",
+    "is", "isn't", "it", "it's", "its", "itself", "let's", "me", "more", "most", "mustn't", "my",
+    "myself", "no", "nor", "not", "of", "off", "on", "once", "only", "or", "other", "ought", "our",
+    "ours", "ourselves", "out", "over", "own", "same", "shan't", "she", "she'd", "she'll", "she's",
+    "should", "shouldn't", "so", "some", "such", "than", "that", "that's", "the", "their", "theirs",
+    "them", "themselves", "then", "there", "there's", "these", "they", "they'd", "they'll", "they're",
+    "they've", "this", "those", "through", "to", "too", "under", "until", "up", "very", "was", "wasn't",
+    "we", "we'd", "we'll", "we're", "we've", "were", "weren't", "what", "what's", "when", "when's",
+    "where", "where's", "which", "while", "who", "who's", "whom", "why", "why's", "with", "won't",
+    "would", "wouldn't", "you", "you'd", "you'll", "you're", "you've", "your", "yours", "yourself",
+    "yourselves"
+}
 
-# ─── NLTK Resource Bootstrap ─────────────────────────────────────────────────
-def bootstrap_nltk():
-    """Download required NLTK resources safely with fallback for serverless environments."""
-    tmp_nltk = os.path.join(tempfile.gettempdir(), "nltk_data")
-    if tmp_nltk not in nltk.data.path:
-        nltk.data.path.append(tmp_nltk)
-
-    resources = [
-        ("tokenizers/punkt",          "punkt"),
-        ("tokenizers/punkt_tab",      "punkt_tab"),
-        ("corpora/stopwords",         "stopwords"),
-    ]
-    for path, name in resources:
-        try:
-            nltk.data.find(path)
-        except LookupError:
-            logger.info("Downloading NLTK resource: %s", name)
-            try:
-                nltk.download(name, quiet=True)
-            except Exception:
-                try:
-                    nltk.download(name, download_dir=tmp_nltk, quiet=True)
-                except Exception as e:
-                    logger.warning("Could not download NLTK resource %s: %s", name, e)
-
-bootstrap_nltk()
-
-try:
-    STOP_WORDS = set(stopwords.words("english"))
-except Exception:
-    STOP_WORDS = {
-        "the", "a", "an", "is", "are", "was", "were", "in", "it", "of", "to",
-        "and", "that", "this", "for", "with", "as", "on", "by", "at", "from",
-        "be", "or", "which", "so", "but", "not", "have", "has", "had", "can"
-    }
-
-# Preserve important technical and domain keywords
+# Preserve key computer science domain tokens
 DOMAIN_TERMS = {
     "tcp", "ack", "syn", "fin", "rto", "rwnd", "mss", "ip", "cpu",
     "os", "oop", "api", "http", "udp", "dns", "buffer", "class", "base"
 }
-STOP_WORDS -= DOMAIN_TERMS
 
-# ─── SBERT Model (Singleton) ─────────────────────────────────────────────────
-_sbert_model: Optional[SentenceTransformer] = None
+STOP_WORDS = STATIC_STOP_WORDS - DOMAIN_TERMS
 
-def get_sbert_model() -> SentenceTransformer:
+# Try loading NLTK stopwords if already cached locally, but do not block or crash if missing
+try:
+    import nltk
+    from nltk.corpus import stopwords
+    STOP_WORDS = (set(stopwords.words("english")) | STATIC_STOP_WORDS) - DOMAIN_TERMS
+except Exception:
+    pass
+
+
+# ─── Robust Tokenizers with Regex Fallbacks ───────────────────────────────────
+def safe_sent_tokenize(text: str) -> List[str]:
+    """Safe sentence tokenization with pure-Python regex fallback."""
+    if not text:
+        return []
+    try:
+        from nltk.tokenize import sent_tokenize
+        return [s.strip() for s in sent_tokenize(text) if s.strip()]
+    except Exception:
+        parts = re.split(r"(?<=[.!?])\s+", text)
+        return [p.strip() for p in parts if p.strip()]
+
+
+def safe_word_tokenize(text: str) -> List[str]:
+    """Safe word tokenization with pure-Python regex fallback."""
+    if not text:
+        return []
+    try:
+        from nltk.tokenize import word_tokenize
+        return [t for t in word_tokenize(text) if len(t) > 0]
+    except Exception:
+        return re.findall(r"\b\w+(?:[-']\w+)*\b", text)
+
+
+def bootstrap_nltk():
+    """Non-blocking lazy downloader for NLTK models if needed."""
+    try:
+        import nltk
+        tmp_nltk = os.path.join(tempfile.gettempdir(), "nltk_data")
+        if tmp_nltk not in nltk.data.path:
+            nltk.data.path.append(tmp_nltk)
+        for path, name in [("tokenizers/punkt", "punkt"), ("tokenizers/punkt_tab", "punkt_tab")]:
+            try:
+                nltk.data.find(path)
+            except LookupError:
+                try:
+                    nltk.download(name, download_dir=tmp_nltk, quiet=True)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+
+# ─── SBERT Model (Lazy Singleton with Fallback) ───────────────────────────────
+_sbert_model: Optional[Any] = None
+
+class FallbackSimilarityModel:
+    """
+    Lightweight TF-IDF / dense hash fallback similarity model.
+    Guarantees zero-crash resilience in memory-constrained serverless environments.
+    """
+    def __init__(self, dim: int = SBERT_EMBEDDING_DIM):
+        self.dim = dim
+
+    def encode(self, texts: List[str], **kwargs) -> np.ndarray:
+        vectors = []
+        for text in texts:
+            vec = np.zeros(self.dim, dtype=np.float32)
+            words = re.findall(r"\b\w+\b", text.lower())
+            for w in words:
+                h = abs(hash(w)) % self.dim
+                vec[h] += 1.0
+            norm = np.linalg.norm(vec)
+            if norm > 0:
+                vec = vec / norm
+            vectors.append(vec)
+        return np.array(vectors, dtype=np.float32)
+
+
+def get_sbert_model() -> Any:
     global _sbert_model
     if _sbert_model is None:
-        logger.info("Loading SBERT model: %s", SBERT_MODEL_NAME)
-        _sbert_model = SentenceTransformer(SBERT_MODEL_NAME)
-        logger.info("SBERT model loaded successfully.")
+        try:
+            from sentence_transformers import SentenceTransformer
+            logger.info("Loading SBERT model: %s", SBERT_MODEL_NAME)
+            _sbert_model = SentenceTransformer(SBERT_MODEL_NAME)
+            logger.info("SBERT model loaded successfully.")
+        except Exception as e:
+            logger.warning("Could not load SentenceTransformer (%s). Using FallbackSimilarityModel.", e)
+            _sbert_model = FallbackSimilarityModel(dim=SBERT_EMBEDDING_DIM)
     return _sbert_model
 
 
@@ -115,14 +188,14 @@ def preprocess_text(raw_text: str, topic: Optional[Dict] = None) -> Dict[str, An
     text = raw_text.lower()
 
     # 2. Segment sentences on raw text
-    sentences = [s.strip() for s in sent_tokenize(raw_text) if s.strip()]
+    sentences = [s.strip() for s in safe_sent_tokenize(raw_text) if s.strip()]
 
     # 3. Clean characters (preserve alphanumerics, hyphens)
     text_clean = re.sub(r"[^a-z0-9\s\-]", " ", text)
     text_clean = re.sub(r"\s+", " ", text_clean).strip()
 
     # 4. Tokenize
-    tokens_raw = [t for t in word_tokenize(text_clean) if len(t) > 0]
+    tokens_raw = [t for t in safe_word_tokenize(text_clean) if len(t) > 0]
     raw_token_count = len(tokens_raw)
 
     # 5. Filter stopwords

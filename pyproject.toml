@@ -4,6 +4,16 @@ version = "1.0.0"
 description = "Beyond Marks: NLP-Based Learning Gap Detection and Remediation"
 readme = "README.md"
 requires-python = ">=3.10"
+dependencies = [
+    "flask>=3.0.0",
+    "sentence-transformers>=2.7.0",
+    "nltk>=3.8.1",
+    "google-generativeai>=0.5.0",
+    "python-dotenv>=1.0.0",
+    "scikit-learn>=1.4.0",
+    "numpy>=1.24.0",
+    "torch>=2.0.0",
+]
 
 [tool.vercel]
 entrypoint = "backend.app:app"

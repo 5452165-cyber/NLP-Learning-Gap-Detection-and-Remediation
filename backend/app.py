@@ -31,7 +31,8 @@ if BACKEND_DIR not in sys.path:
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request, render_template, send_from_directory, Response
+from typing import Optional
 
 try:
     from config import TOPICS, DEFAULT_TOPIC, SBERT_MODEL_NAME, SBERT_EMBEDDING_DIM
@@ -53,12 +54,36 @@ logger = logging.getLogger(__name__)
 template_dir = os.path.join(BASE_DIR, "frontend", "templates")
 static_dir = os.path.join(BASE_DIR, "frontend", "static")
 
+# Discover template and static directories across possible serverless layouts
+for candidate in [
+    os.path.join(BASE_DIR, "frontend", "templates"),
+    os.path.join(os.getcwd(), "frontend", "templates"),
+    os.path.join(os.path.dirname(__file__), "..", "frontend", "templates"),
+    "/var/task/frontend/templates",
+]:
+    if os.path.isdir(candidate):
+        template_dir = candidate
+        break
+
+for candidate in [
+    os.path.join(BASE_DIR, "frontend", "static"),
+    os.path.join(os.getcwd(), "frontend", "static"),
+    os.path.join(os.path.dirname(__file__), "..", "frontend", "static"),
+    "/var/task/frontend/static",
+]:
+    if os.path.isdir(candidate):
+        static_dir = candidate
+        break
+
 app = Flask(
     __name__,
     template_folder=template_dir,
     static_folder=static_dir,
     static_url_path="/static",
 )
+
+# Export WSGI application alias
+application = app
 
 # Manual CORS headers
 @app.after_request
@@ -68,11 +93,64 @@ def add_cors_headers(response):
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     return response
 
-@app.route("/", defaults={"path": ""})
-@app.route("/<path:path>")
-def serve_frontend(path):
+
+def _get_raw_index_html() -> Optional[str]:
+    """Fallback reader for index.html when render_template fails in serverless environments."""
+    candidate_paths = [
+        os.path.join(template_dir, "index.html"),
+        os.path.join(BASE_DIR, "frontend", "templates", "index.html"),
+        os.path.join(os.getcwd(), "frontend", "templates", "index.html"),
+        os.path.join(os.path.dirname(__file__), "..", "frontend", "templates", "index.html"),
+        "/var/task/frontend/templates/index.html",
+    ]
+    for path in candidate_paths:
+        if os.path.isfile(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return f.read()
+            except Exception:
+                pass
+    return None
+
+
+@app.route("/", methods=["GET"])
+def serve_index():
     """Serve the single-page frontend app."""
-    return render_template("index.html")
+    try:
+        return render_template("index.html")
+    except Exception as e:
+        logger.warning("render_template failed (%s), attempting raw file read...", e)
+        raw_html = _get_raw_index_html()
+        if raw_html:
+            return Response(raw_html, mimetype="text/html")
+        return jsonify({
+            "status": "error",
+            "message": "Frontend index.html could not be loaded.",
+            "api_health": "/api/health",
+            "api_topics": "/api/topics"
+        }), 500
+
+
+@app.route("/static/<path:filename>", methods=["GET"])
+def serve_static(filename):
+    """Serve static assets with fallback directory lookups."""
+    candidate_dirs = [
+        static_dir,
+        os.path.join(BASE_DIR, "frontend", "static"),
+        os.path.join(os.getcwd(), "frontend", "static"),
+        os.path.join(os.path.dirname(__file__), "..", "frontend", "static"),
+        "/var/task/frontend/static",
+    ]
+    for d in candidate_dirs:
+        if os.path.isfile(os.path.join(d, filename)):
+            return send_from_directory(d, filename)
+    return jsonify({"error": f"Static asset {filename} not found."}), 404
+
+
+@app.route("/favicon.ico", methods=["GET"])
+def favicon():
+    """Handle browser favicon request cleanly without throwing errors."""
+    return ("", 204)
 
 
 # ─── API Routes ───────────────────────────────────────────────────────────────
@@ -307,15 +385,22 @@ def remediate():
         return jsonify({"error": "Internal server error during remediation."}), 500
 
 
+# ─── Client Route Catch-All ──────────────────────────────────────────────────
+@app.route("/<path:path>", methods=["GET"])
+def catch_all(path):
+    """Route client paths to index.html while returning JSON 404 on missing API routes."""
+    if path.startswith("api/"):
+        return jsonify({"error": f"API endpoint /{path} not found"}), 404
+    if any(path.endswith(ext) for ext in [".css", ".js", ".png", ".jpg", ".ico", ".svg", ".json"]):
+        return serve_static(path)
+    return serve_index()
+
+
 # ─── Startup ──────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     logger.info("=" * 60)
     logger.info("  Beyond Marks — NLP Learning Gap Detection System")
-    logger.info("  Pre-loading SBERT model (%s) ...", SBERT_MODEL_NAME)
     logger.info("=" * 60)
-
-    # Eagerly load the SBERT model so the first request isn't slow
-    get_sbert_model()
 
     port = int(os.getenv("PORT", 5000))
     logger.info("Starting Flask server on http://localhost:%d", port)

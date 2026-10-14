@@ -15,9 +15,17 @@ from typing import Dict, List
 # Suppress deprecation warnings from google packages (still functional on Python 3.10)
 warnings.filterwarnings("ignore", category=FutureWarning, module="google")
 
-import google.generativeai as genai
+try:
+    import google.generativeai as genai
+    HAS_GENAI = True
+except ImportError:
+    HAS_GENAI = False
+    genai = None
 
-from config import GEMINI_API_KEY, REMEDIATION_PROMPT_TEMPLATE
+try:
+    from config import GEMINI_API_KEY, REMEDIATION_PROMPT_TEMPLATE
+except ImportError:
+    from backend.config import GEMINI_API_KEY, REMEDIATION_PROMPT_TEMPLATE
 
 logger = logging.getLogger(__name__)
 
@@ -26,12 +34,19 @@ _gemini_configured = False
 
 def _configure_gemini() -> bool:
     global _gemini_configured
+    if not HAS_GENAI or genai is None:
+        logger.info("google-generativeai not installed — using static fallback remediations.")
+        return False
     if not _gemini_configured:
         if not GEMINI_API_KEY or GEMINI_API_KEY == "your_gemini_api_key_here":
             logger.warning("Gemini API key not set — will use fallback remediation.")
             return False
-        genai.configure(api_key=GEMINI_API_KEY)
-        _gemini_configured = True
+        try:
+            genai.configure(api_key=GEMINI_API_KEY)
+            _gemini_configured = True
+        except Exception as e:
+            logger.warning("Could not configure Gemini API (%s) — using fallback.", e)
+            return False
     return True
 
 
