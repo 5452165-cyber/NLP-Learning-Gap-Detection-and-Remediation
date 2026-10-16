@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: beyond-marks-nlp
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt && python build.py
+    startCommand: gunicorn api.index:application --bind 0.0.0.0:$PORT --workers 1 --timeout 120
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: GEMINI_API_KEY
+        sync: false   # Paste this manually in Render dashboard → Environment
+    autoDeploy: true   # Auto-redeploy on every GitHub push to main
